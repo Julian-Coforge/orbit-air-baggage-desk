@@ -2,14 +2,14 @@
 
 A command line claims desk for Orbit Air's lost, delayed, and damaged baggage claims.
 It files claims, assigns them to agents, tracks every status change, and escalates
-claims that run past their response deadline. Built with Python 3.12 and SQLite.
+claims that run past their response deadline. Built with Python 3.14 and SQLite.
 
 ## Install
 
 ```bash
 git clone https://github.com/Julian-Coforge/orbit-air-baggage-desk.git
 cd orbit-air-baggage-desk
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
