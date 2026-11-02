@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(cat .env*)",
+      "Bash(less .env*)",
+      "Bash(head .env*)",
+      "Bash(tail .env*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/run_tests.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

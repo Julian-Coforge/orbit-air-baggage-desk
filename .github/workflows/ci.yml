@@ -1,0 +1,28 @@
+# STRETCH GOAL 3: run pytest and ruff on every pull request.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Ruff
+        run: ruff check .
+      - name: Pytest
+        run: |
+          set +e
+          pytest
+          rc=$?
+          # 5 means no tests collected yet, which is expected before the first branch.
+          if [ "$rc" -eq 5 ]; then exit 0; fi
+          exit "$rc"
