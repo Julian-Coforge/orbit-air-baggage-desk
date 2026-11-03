@@ -150,6 +150,25 @@ $ python main.py --db demo.db history 3
 2026-11-02T12:31:00  assigned -> escalated  by system
 ```
 
+## Code Review
+
+I ran `/code-review high main...feature/cli` on PR #4 before merging. It reported 10
+findings. Fixes are in commit `9a9c114`; tests were not changed (still `47 passed`,
+`ruff check .` clean).
+
+| # | Finding | Action |
+| --- | --- | --- |
+| 1 | `seed` crashed with a `UnicodeDecodeError` traceback on a file that is not UTF-8 (reproduced) | Fixed: prints `Error: cannot read seed file ...: it is not UTF-8 text`, exit 1. `csv.Error` is handled the same way |
+| 2 | A CSV with a byte order mark (Excel "CSV UTF-8") failed with `missing column(s) passenger` (reproduced) | Fixed: file is read as `utf-8-sig`. Re-run loaded the BOM file |
+| 3 | `--db /nonexistent/x.db list` crashed with a `sqlite3.OperationalError` traceback (reproduced) | Fixed: prints `Error: database problem with /nonexistent/x.db: unable to open database file`, exit 1 |
+| 4 | `seed` checked every row first but saved each row in its own transaction | Fixed: all rows now save in one transaction. Checked with a trigger that fails the 7th history insert: before the fix 6 claims stayed saved, after it 0 |
+| 5 | CI docker job ran `seed` and `report` in two containers, so `report` read an empty database | Fixed: one container runs both |
+| 6 | STRETCH GOAL 1 hook let an edit through if it could not read its input, and did not cover `NotebookEdit` | Fixed: unreadable input is blocked, `NotebookEdit` added to the matcher. It still does not see shell commands such as `sed -i`; the `tests/` checks in each PR catch those |
+| 7 | `report_counts` repeated the tier list instead of using `TIER_HOURS` | Fixed |
+| 8 | Seed rows with ` lost` or `Gold` (spaces or capitals) are rejected | No change: validation is strict on purpose and names the bad line, so the file can be corrected |
+| 9 | README said every command takes `--by`, but `seed` does not | Fixed the README: `seed` always records `seed` |
+| 10 | `file` re-reads the claim it just saved to print the deadline | No change: one extra read on a local database, kept for clarity |
+
 ## Linear Issues
 
 Linear project: [Orbit Air Baggage Desk](https://linear.app/team2-week3-ert/project/orbit-air-baggage-desk-a3129c19e1dd)
