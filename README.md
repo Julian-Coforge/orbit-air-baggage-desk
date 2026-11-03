@@ -137,3 +137,73 @@ code, without changing it:
 
 **What I changed.** Nothing: no defect was found. The two thin spots in the tests are
 covered by checks 2 and 3 above rather than by editing committed tests.
+
+### feature/deadlines-and-escalation ([TEA-34](https://linear.app/team2-week3-ert/issue/TEA-34/featuredeadlines-and-escalation-overdue-rule-escalation-and-rollback), PR #3)
+
+**Prompt given.** The workflow from PLAN.md section 7, with the TEA-34 issue (problem,
+actual, expected, done when, constraint) and PLAN.md section 8's 12 planned tests,
+including the rollback test and the mutation check, as the spec.
+
+**What the agent did.**
+- Wrote the 12 tests in `tests/test_escalation.py` and committed them alone
+  (`32e7562`). They failed at collection:
+  `ImportError: cannot import name 'escalate_claim' from 'claims'`.
+- Added `is_overdue` (`to_utc(now) > to_utc(deadline)`), `escalate_claim` (rejects a
+  claim that is not overdue, then goes through `_change_status`) and `escalate_overdue`
+  (open and assigned claims in id order, history by `system`, returns the ids).
+  Committed as `f3b6d41`, which changes only `claims.py`. Result: `35 passed`, ruff
+  clean, CI green.
+- **Mistake caught.** PLAN.md's mutation-check command,
+  `pytest tests/test_escalation.py -k rollback`, selected no test at all
+  (`12 deselected`), because the test is named
+  `test_failed_history_write_rolls_back_the_claim_change`. Run as written, the check
+  would have "passed" without running anything. The agent noticed the `deselected`
+  count, re-ran with `-k rolls_back`, and fixed PLAN.md in its own commit (`c515a78`).
+- The rollback test calls `assign_claim`, whose transaction came from the previous
+  branch. Its first failure was the file-level import error, not the rollback itself, so
+  the mutation check below is the evidence that it catches a missing transaction.
+
+**What I checked.** I reviewed the PR against PLAN.md and the rubric. GitHub Actions
+passed, the commit order was right, and I asked for these checks to be run as a script
+against the branch code, without changing it:
+
+1. **Deadline boundary.** Gold claim filed `2026-11-02T10:00:00`, deadline
+   `14:00:00`. `escalate_claim` at `13:59` and at exactly `14:00` both raised
+   `claim 1 is not overdue: its deadline is 2026-11-02T14:00:00 UTC`, with the claim
+   unchanged at `('open', None, 1)` (status, agent, history count). At `14:01` it
+   succeeded: `('escalated', None, 2)`.
+2. **Eligible statuses.** With one overdue claim in each status, `escalate_overdue` at
+   16:00 returned `[1, 2]` (the open and the assigned claim). The resolved, closed and
+   already escalated claims kept identical status, agent and history count:
+   `('resolved', 'Dana', 3)`, `('closed', 'Dana', 4)`, `('escalated', None, 2)`.
+3. **Agent kept.** A claim assigned to Dana and escalated at 14:01 became
+   `('escalated', 'Dana', 3)`. Its last history row: `assigned` to `escalated`,
+   `system`, `2026-11-02T14:01:00`.
+4. **Bulk escalation.** Five claims (gold open overdue, silver open not overdue, gold
+   assigned overdue, standard open filed four days earlier, gold resolved). It returned
+   `[1, 3, 4]` in ascending order and added exactly 3 history rows. A second run
+   returned `[]` and the history total stayed at 11.
+5. **UTC.** For deadline `14:00Z`: `16:00+02:00` was not overdue, `16:01+02:00` was,
+   `09:00-05:00` was not, and a naive `14:01` (read as UTC) was. `is_overdue` compares
+   `to_utc(now) > to_utc(deadline)`. A search for `datetime.now`, `time.time`,
+   `date.today` and `utcnow` in `claims.py` and `db.py` found nothing.
+6. **Rollback and mutation.** With `with conn:` replaced by `if True:` in
+   `_change_status`,
+   `pytest -q tests/test_escalation.py -k rolls_back` gave
+   `AssertionError: assert 'assigned' == 'open'` and `1 failed, 11 deselected`. With the
+   file restored (`git diff --quiet HEAD -- claims.py` confirmed it was identical), it
+   gave `1 passed, 11 deselected`. Run twice, by the agent and again for this review,
+   with the same results.
+7. **Transaction scope.** Each escalation is atomic. With a trigger failing only the
+   second claim's escalation history row, that claim stayed `('open', None, 1)`, but the
+   first claim stayed `('escalated', None, 2)` and `escalate_overdue` raised before
+   returning. So a batch is not all-or-nothing: each claim is its own transaction. That
+   matches the plan, and nothing in the brief asks for batch atomicity.
+8. **Workflow.** `32e7562` changes only `tests/test_escalation.py` (12 tests),
+   `f3b6d41` only `claims.py`, `c515a78` only `PLAN.md`. `git diff 32e7562 -- tests/`,
+   `git status --porcelain --untracked-files=all -- tests/` and
+   `git log --oneline 32e7562..HEAD -- tests/` are all empty. Locally: `pytest -q` gave
+   `35 passed`, `ruff check .` gave `All checks passed!`.
+
+**What I changed.** No code or test changes: no defect was found. The only correction
+on this branch is the PLAN.md selector fix described above.
