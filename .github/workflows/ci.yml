@@ -26,3 +26,17 @@ jobs:
           # 5 means no tests collected yet, which is expected before the first branch.
           if [ "$rc" -eq 5 ]; then exit 0; fi
           exit "$rc"
+
+  docker:
+    # STRETCH GOAL 4 check: build the image, then run the tests and the app inside it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t orbit-air .
+      - name: Run tests in the container
+        run: docker run --rm --entrypoint pytest orbit-air -q
+      - name: Run the app in the container
+        run: |
+          docker run --rm orbit-air seed seed_claims.csv
+          docker run --rm orbit-air --now 2026-11-02T14:01:00 report
