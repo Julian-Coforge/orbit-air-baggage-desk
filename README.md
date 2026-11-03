@@ -28,7 +28,7 @@ Every command takes two global options before the command name:
 - `--now ISO_TIMESTAMP` sets the current time (UTC if no offset is given). Without it the app reads the real clock. `main.py` is the only file that reads the clock.
 - `--db PATH` picks the SQLite file (default `orbit_air.db`, which is git-ignored).
 
-Commands that change a claim also take `--by NAME`, recorded in the history (default `desk`, or `system` for `escalate`).
+`file`, `assign`, `resolve`, `close` and `escalate` also take `--by NAME`, recorded in the history (default `desk`, or `system` for `escalate`). `seed` always records `seed`.
 
 ```bash
 python main.py --help

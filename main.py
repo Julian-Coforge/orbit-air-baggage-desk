@@ -8,6 +8,7 @@ claims.py and prints the result. All claim rules live in claims.py.
 
 import argparse
 import csv
+import sqlite3
 import sys
 from datetime import UTC, datetime
 
@@ -95,10 +96,15 @@ def print_claims(rows) -> None:
 
 def read_seed_rows(path: str) -> list[dict[str, str]]:
     try:
-        with open(path, newline="", encoding="utf-8") as handle:
+        # utf-8-sig also reads files that start with a byte order mark (Excel "CSV UTF-8").
+        with open(path, newline="", encoding="utf-8-sig") as handle:
             return list(csv.DictReader(handle))
     except OSError as error:
         raise claims.ClaimError(f"cannot read seed file {path}: {error.strerror}") from None
+    except UnicodeDecodeError:
+        raise claims.ClaimError(f"cannot read seed file {path}: it is not UTF-8 text") from None
+    except csv.Error as error:
+        raise claims.ClaimError(f"cannot read seed file {path}: {error}") from None
 
 
 def run(args: argparse.Namespace, conn, now: datetime) -> None:
@@ -157,6 +163,9 @@ def main(argv: list[str] | None = None) -> int:
             conn.close()
     except claims.ClaimError as error:
         print(f"Error: {error}", file=sys.stderr)
+        return 1
+    except sqlite3.Error as error:
+        print(f"Error: database problem with {args.db}: {error}", file=sys.stderr)
         return 1
     return 0
 

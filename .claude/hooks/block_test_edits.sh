@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 # STRETCH GOAL 1: PreToolUse hook that stops Claude editing anything in tests/.
 # The tests are the spec. I can still edit them myself in VS Code; this only fires on
-# Claude's Edit, Write and MultiEdit tools.
+# Claude's Edit, Write, MultiEdit and NotebookEdit tools. It does not see shell commands.
 
 input=$(cat)
 
-# Pull tool_input.file_path out of the hook JSON. python3 is used so this works without jq.
-file_path=$(printf '%s' "$input" | python3 -c \
-  'import json, sys; print(json.load(sys.stdin).get("tool_input", {}).get("file_path", ""))' \
-  2>/dev/null)
+# Pull the target path out of the hook JSON (file_path, or notebook_path for NotebookEdit).
+# python3 is used so this works without jq. If the input cannot be read, block the edit
+# rather than let it through unchecked.
+if ! file_path=$(printf '%s' "$input" | python3 -c '
+import json, sys
+tool_input = json.load(sys.stdin).get("tool_input", {})
+print(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+' 2>/dev/null); then
+  echo "Blocked: could not read the hook input, so the edit was not checked." >&2
+  exit 2
+fi
 
 # Make the path relative to the project so "tests/x.py" and "/full/path/tests/x.py" match.
 project_dir="${CLAUDE_PROJECT_DIR:-$PWD}"

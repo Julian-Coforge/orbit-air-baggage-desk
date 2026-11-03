@@ -120,21 +120,36 @@ def file_claim(
 
     # The claim and its first history entry are saved together or not at all.
     with conn:
-        cursor = conn.execute(
-            "INSERT INTO claims (passenger, flight, type, tier, status, note, filed_at, deadline) "
-            "VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
-            (
-                passenger,
-                flight,
-                claim_type,
-                tier,
-                note or "",
-                format_time(now),
-                format_time(deadline_for(tier, now)),
-            ),
-        )
-        claim_id = cursor.lastrowid
-        _add_history(conn, claim_id, None, "open", changed_by, now)
+        return _insert_claim(conn, passenger, flight, claim_type, tier, note, now, changed_by)
+
+
+def _insert_claim(
+    conn: sqlite3.Connection,
+    passenger: str,
+    flight: str,
+    claim_type: str,
+    tier: str,
+    note: str,
+    now: datetime,
+    changed_by: str,
+) -> int:
+    """Insert an already validated claim and its first history entry. Does not commit:
+    the caller wraps this in `with conn:` so it is part of one transaction."""
+    cursor = conn.execute(
+        "INSERT INTO claims (passenger, flight, type, tier, status, note, filed_at, deadline) "
+        "VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
+        (
+            passenger,
+            flight,
+            claim_type,
+            tier,
+            note or "",
+            format_time(now),
+            format_time(deadline_for(tier, now)),
+        ),
+    )
+    claim_id = cursor.lastrowid
+    _add_history(conn, claim_id, None, "open", changed_by, now)
     return claim_id
 
 
@@ -263,28 +278,25 @@ def seed_claims(
 
     Every row is checked before any is saved, so a bad row stops the whole load
     with a ClaimError naming its line in the CSV file (the header is line 1).
+    All rows are then saved in one transaction, so a database error part way
+    through saves none of them.
     """
+    changed_by = _require_text(changed_by, "changed by")
+    checked = []
     for line, row in enumerate(rows, start=2):
         missing = [column for column in SEED_COLUMNS if column not in row]
         if missing:
             raise ClaimError(f"line {line}: missing column(s) {', '.join(missing)}")
         try:
-            _validate_claim(row["passenger"], row["flight"], row["type"], row["tier"])
+            fields = _validate_claim(row["passenger"], row["flight"], row["type"], row["tier"])
         except ClaimError as error:
             raise ClaimError(f"line {line}: {error}") from None
-    return [
-        file_claim(
-            conn,
-            row["passenger"],
-            row["flight"],
-            row["type"],
-            row["tier"],
-            row["note"] or "",
-            now=now,
-            changed_by=changed_by,
-        )
-        for row in rows
-    ]
+        checked.append((*fields, row["note"] or ""))
+    with conn:
+        return [
+            _insert_claim(conn, *fields, note, now, changed_by)
+            for *fields, note in checked
+        ]
 
 
 # STRETCH GOAL 2: open and overdue claim counts by tier, for the report command.
@@ -293,7 +305,7 @@ def report_counts(conn: sqlite3.Connection, *, now: datetime) -> dict[str, dict[
 
     "Open" here means not yet resolved or closed: open, assigned or escalated.
     """
-    counts = {tier: {"open": 0, "overdue": 0} for tier in ("gold", "silver", "standard")}
+    counts = {tier: {"open": 0, "overdue": 0} for tier in TIER_HOURS}
     rows = conn.execute(
         "SELECT tier, deadline FROM claims WHERE status IN ('open', 'assigned', 'escalated')"
     ).fetchall()

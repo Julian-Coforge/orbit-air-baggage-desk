@@ -37,6 +37,8 @@ jobs:
       - name: Run tests in the container
         run: docker run --rm --entrypoint pytest orbit-air -q
       - name: Run the app in the container
+        # One container, so report reads the database that seed just wrote.
         run: |
-          docker run --rm orbit-air seed seed_claims.csv
-          docker run --rm orbit-air --now 2026-11-02T14:01:00 report
+          docker run --rm --entrypoint sh orbit-air -c '
+            python main.py --now 2026-11-02T09:00:00 seed seed_claims.csv &&
+            python main.py --now 2026-11-02T14:01:00 report'
