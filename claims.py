@@ -73,6 +73,18 @@ def _require_choice(value: str, field: str, choices: tuple[str, ...]) -> str:
     return value
 
 
+def _validate_claim(
+    passenger: str, flight: str, claim_type: str, tier: str
+) -> tuple[str, str, str, str]:
+    """Check a new claim's fields. Returns them cleaned, or raises ClaimError."""
+    return (
+        _require_text(passenger, "passenger"),
+        _require_text(flight, "flight"),
+        _require_choice(claim_type, "type", CLAIM_TYPES),
+        _require_choice(tier, "tier", TIERS),
+    )
+
+
 def _add_history(
     conn: sqlite3.Connection,
     claim_id: int,
@@ -103,10 +115,7 @@ def file_claim(
 
     Raises ClaimError, and saves nothing, if any field is invalid.
     """
-    passenger = _require_text(passenger, "passenger")
-    flight = _require_text(flight, "flight")
-    claim_type = _require_choice(claim_type, "type", CLAIM_TYPES)
-    tier = _require_choice(tier, "tier", TIERS)
+    passenger, flight, claim_type, tier = _validate_claim(passenger, flight, claim_type, tier)
     changed_by = _require_text(changed_by, "changed by")
 
     # The claim and its first history entry are saved together or not at all.
@@ -238,6 +247,61 @@ def escalate_overdue(
             escalate_claim(conn, claim["id"], now=now, changed_by=changed_by)
             escalated.append(claim["id"])
     return escalated
+
+
+SEED_COLUMNS = ("passenger", "flight", "type", "tier", "note")
+
+
+def seed_claims(
+    conn: sqlite3.Connection,
+    rows: list[dict[str, str]],
+    *,
+    now: datetime,
+    changed_by: str = "seed",
+) -> list[int]:
+    """File one claim per row (dicts with SEED_COLUMNS as keys). Returns the new ids.
+
+    Every row is checked before any is saved, so a bad row stops the whole load
+    with a ClaimError naming its line in the CSV file (the header is line 1).
+    """
+    for line, row in enumerate(rows, start=2):
+        missing = [column for column in SEED_COLUMNS if column not in row]
+        if missing:
+            raise ClaimError(f"line {line}: missing column(s) {', '.join(missing)}")
+        try:
+            _validate_claim(row["passenger"], row["flight"], row["type"], row["tier"])
+        except ClaimError as error:
+            raise ClaimError(f"line {line}: {error}") from None
+    return [
+        file_claim(
+            conn,
+            row["passenger"],
+            row["flight"],
+            row["type"],
+            row["tier"],
+            row["note"] or "",
+            now=now,
+            changed_by=changed_by,
+        )
+        for row in rows
+    ]
+
+
+# STRETCH GOAL 2: open and overdue claim counts by tier, for the report command.
+def report_counts(conn: sqlite3.Connection, *, now: datetime) -> dict[str, dict[str, int]]:
+    """For each tier, count claims still waiting on a response and how many are overdue.
+
+    "Open" here means not yet resolved or closed: open, assigned or escalated.
+    """
+    counts = {tier: {"open": 0, "overdue": 0} for tier in ("gold", "silver", "standard")}
+    rows = conn.execute(
+        "SELECT tier, deadline FROM claims WHERE status IN ('open', 'assigned', 'escalated')"
+    ).fetchall()
+    for row in rows:
+        counts[row["tier"]]["open"] += 1
+        if is_overdue(row["deadline"], now):
+            counts[row["tier"]]["overdue"] += 1
+    return counts
 
 
 def list_claims(
