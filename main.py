@@ -69,11 +69,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def pick_clock(now_text: str | None) -> datetime:
-    """The --now time if given, otherwise the real clock. The only clock read in the app."""
+    """The --now time if given, otherwise the real clock. The only clock read in the app.
+
+    Times are cut to whole seconds, the precision they are stored and shown at, so a
+    claim is never escalated at a time that prints the same as its deadline.
+    """
     if now_text is None:
-        return datetime.now(UTC)
+        return datetime.now(UTC).replace(microsecond=0)
     try:
-        return claims.to_utc(datetime.fromisoformat(now_text))
+        return claims.to_utc(datetime.fromisoformat(now_text)).replace(microsecond=0)
     except ValueError:
         raise claims.ClaimError(
             f"--now must be an ISO timestamp, e.g. 2026-11-02T14:00:00 (got {now_text!r})"
@@ -143,8 +147,7 @@ def run(args: argparse.Namespace, conn, now: datetime) -> None:
                 )
         case "seed":
             ids = claims.seed_claims(conn, read_seed_rows(args.csv_path), now=now)
-            print(f"Loaded {len(ids)} claims from {args.csv_path} (ids {ids[0]}-{ids[-1]})."
-                  if ids else f"Loaded 0 claims from {args.csv_path}.")
+            print(f"Loaded {len(ids)} claims from {args.csv_path} (ids {ids[0]}-{ids[-1]}).")
         case "report":
             print(f"Claims at {claims.format_time(now)} UTC")
             print(f"{'TIER':<9} {'OPEN':>5} {'OVERDUE':>8}")

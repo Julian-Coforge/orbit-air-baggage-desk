@@ -278,10 +278,15 @@ def seed_claims(
 
     Every row is checked before any is saved, so a bad row stops the whole load
     with a ClaimError naming its line in the CSV file (the header is line 1).
-    All rows are then saved in one transaction, so a database error part way
-    through saves none of them.
+    An empty file, or one with only a header, is rejected too. All rows are then
+    saved in one transaction, so a database error part way through saves none of them.
     """
     changed_by = _require_text(changed_by, "changed by")
+    if not rows:
+        raise ClaimError(
+            f"no claims to load: expected a header row ({','.join(SEED_COLUMNS)}) "
+            "and at least one claim"
+        )
     checked = []
     for line, row in enumerate(rows, start=2):
         missing = [column for column in SEED_COLUMNS if column not in row]
