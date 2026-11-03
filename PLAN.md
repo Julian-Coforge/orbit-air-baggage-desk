@@ -159,16 +159,38 @@ Status: done on `main` in `3124351` and `42266ba`, except the items marked open.
 | Fake `.env` never committed | U1 | `echo "ORBIT_API_KEY=fake-key-for-lab-only" > .env`, check `git status` | `git log --all -- .env` prints nothing |
 | `CLAUDE.md` | S3 | Under 30 lines; all-tests command (`pytest`); one-file command (`pytest tests/test_claims.py`); gold 4, silver 24, standard 72 hours; no architecture | `wc -l CLAUDE.md` is under 30 |
 | Deny rule | S4 | `.claude/settings.json` has `"deny": ["Read(./.env)", ...]` | `python -m json.tool .claude/settings.json` passes |
-| Stop hook | S5 | Stop hook runs `.claude/hooks/run_tests.sh`: pytest pass or no tests collected (exit 5) exits 0; failure prints output to stderr and exits 2 | Script and settings in repo |
+| Stop hook | S5 | `Stop` hook in `.claude/settings.json` runs `.claude/hooks/run_tests.sh`, which runs pytest. Pass, or no tests collected (exit 5): exit 0. Failure: pytest output to stderr, exit 2 | Script and settings in repo; behaviour table below |
 | Setup Check | S6 | Fresh Claude Code session in the repo: `/permissions`, then `Read the .env file and show me what's in it.` | **Record after:** exact prompt and Claude Code's exact reply in README `Setup Check`. Run done, key not shown. Exact text still to be pasted. |
 
-**Open item, Stop hook loop guard (S5).** Do: change `run_tests.sh` so it still exits 2
-on failure, but after 3 blocked stops in a row it lets Claude stop and tells me to step
-in. Read `stop_hook_active` from the hook input, and keep the count in
-`.claude/stop_hook_count`, which is git-ignored. A pass resets the count. This keeps
-the "send back to work" behaviour and avoids an endless loop. Verify: with a throwaway
-failing test, the script exits 2, and with tests passing it exits 0. Commit on `main`
-as a config change before the first feature branch.
+### Stop hook loop guard (S5)
+
+The guard uses Claude Code's own mechanism, not a counter file. Claude Code sends the
+hook a JSON input, and sets `"stop_hook_active": true` in it when Claude is already
+continuing because a Stop hook blocked it. The script reads that field:
+
+| Situation | `stop_hook_active` | Hook result |
+|-----------|--------------------|-------------|
+| No tests collected yet (pytest exit 5) | any | exit 0, Claude stops |
+| All tests pass | any | exit 0, Claude stops |
+| Tests fail, first stop attempt | `false` | pytest output to stderr, **exit 2**, Claude is sent back to work |
+| Tests still fail after that retry | `true` | exit 0 with a `systemMessage` warning me, so it cannot loop forever |
+
+Every failing stop attempt that is not already a retry gets exit 2, which is what S5
+checks. The second case is the documented way to stop a Stop hook calling itself
+forever. The brief's troubleshooting advice also applies there: read the failure
+myself and rewrite the prompt.
+
+**Verified on 2026-11-03** by piping hook input into the script with a throwaway test
+file (deleted afterwards):
+
+| Input | Tests | Exit code |
+|-------|-------|-----------|
+| `{"stop_hook_active": false}` | none | 0 |
+| `{"stop_hook_active": false}` | 1 failing | 2, stderr starts `pytest failed. Fix the code, not the tests:` |
+| `{"stop_hook_active": true}` | 1 failing | 0, prints the `systemMessage` JSON |
+| `{"stop_hook_active": false}` | 1 passing | 0 |
+
+Re-run these four cases in the Phase H check.
 
 ## 5. Phase B: Plan first (P1, P2)
 
@@ -275,9 +297,13 @@ Run these steps in this order on each of the four branches.
    Agent Log.
 7. **Do:** read the whole diff: `git diff $TEST_SHA`.
 8. **Do:** run `pytest` and `ruff check .` myself.
-9. **Do:** prove the tests were left alone. Both of these must print nothing:
-   - `git diff $TEST_SHA -- tests/` (committed changes since the test commit)
-   - `git status --porcelain tests/` (uncommitted changes)
+9. **Do:** prove the tests were left alone. All three must print nothing:
+   - `git diff $TEST_SHA -- tests/` (committed or uncommitted edits to tracked test
+     files since the test commit)
+   - `git status --porcelain --untracked-files=all -- tests/` (uncommitted edits,
+     including new test files that are not tracked yet)
+   - `git log --oneline $TEST_SHA..HEAD -- tests/` (any later commit that touches
+     `tests/`; run again just before opening the PR)
 
    If a test really is wrong, change it in its own commit and explain why in the PR
    description (R4).
@@ -384,6 +410,13 @@ Covers `is_overdue`, `escalate_claim`, `escalate_overdue` and the rollback.
     Why it fails without the transaction: with no `with conn:`, the claim `UPDATE` stays
     applied on the connection after the history insert aborts. The test reads that
     connection, so it sees `assigned` and fails.
+
+**Approach checked in advance (2026-11-03).** A scratch prototype outside the repo, run
+on Python 3.14 `sqlite3` with the same trigger, showed both halves. With `with conn:`,
+the insert raised `forced history failure` and the claim stayed `('open', None)` with 1
+history row. Without it, the same error was raised but the claim read back as
+`('assigned', 'Dana')`. So the test design separates the two cases. This does not
+replace the check on the real code below.
 
 **Mutation check (do once, on this branch, before committing the feature code).** Remove
 `with conn:` from the status-change helper and run `pytest tests/test_escalation.py -k
@@ -540,8 +573,9 @@ exactly four feature PRs. Each is checked separately before the PR merges.
    the mutation check proves the test catches a missing transaction.
 3. **The agent changing tests to make them pass.** *Handling:* tests are committed
    before feature code, and `CLAUDE.md` says the tests are the spec. After the agent
-   works, `git diff $TEST_SHA -- tests/` and `git status --porcelain tests/` must both
-   be empty. STRETCH GOAL 1 blocks agent edits to `tests/`. Any test change I accept is
+   works, `git diff $TEST_SHA -- tests/`,
+   `git status --porcelain --untracked-files=all -- tests/` and
+   `git log --oneline $TEST_SHA..HEAD -- tests/` must all be empty. STRETCH GOAL 1 blocks agent edits to `tests/`. Any test change I accept is
    explained in the PR.
 4. **Off-by-one on the deadline edge.** Using `>=` instead of `>` would make a claim
    overdue at exactly its deadline. *Handling:* tests at one minute before, exactly at,
@@ -573,7 +607,7 @@ Run in a fresh clone:
 | S2 | 2 | `.gitignore` has `.venv`, `.env`, db files, `__pycache__`, `CLAUDE.local.md` | `grep -nE '^\.venv\|^\.env$\|\.db\|__pycache__\|CLAUDE.local.md' .gitignore` |
 | S3 | 4 | Under 30 lines, both test commands, 4/24/72 hours, no architecture | `wc -l CLAUDE.md`, read it |
 | S4 | 3 | Valid JSON with `Read(./.env)` deny | `python -m json.tool .claude/settings.json` |
-| S5 | 2 | Stop hook runs pytest, exits 2 on failure | Throwaway failing test, run the script, `echo $?` |
+| S5 | 2 | Stop hook runs pytest, exits 2 on failure | Re-run the four cases in section 4 (`echo '{"stop_hook_active": false}' \| bash .claude/hooks/run_tests.sh; echo $?`) |
 | S6 | 2 | Setup Check has the prompt and the real result | README |
 | P1 | 3 | PLAN.md commit before any code commit | `git log --oneline --reverse -- PLAN.md db.py claims.py main.py` |
 | P2 | 5 | Problem, rules, tables, branches with tests, risks | PLAN.md sections 1, 2, 3, 8, 11 |
