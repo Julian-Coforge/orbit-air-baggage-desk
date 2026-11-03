@@ -154,7 +154,7 @@ Status: done on `main` in `3124351` and `42266ba`, except the items marked open.
 | Item | Rubric | Do | Evidence |
 |------|--------|----|----------|
 | Public repo named exactly `orbit-air-baggage-desk` with `README.md` | S1 | Created on GitHub, public | Repo URL, `README.md` at root |
-| Python 3.14 venv with pytest and ruff | env | `python3.14 -m venv .venv`, `pip install -r requirements-dev.txt` | `requirements-dev.txt`, `pyproject.toml`, `.python-version` |
+| Python 3.12 venv with pytest and ruff | env | `python3.12 -m venv .venv`, `pip install -r requirements-dev.txt` | `requirements-dev.txt`, `pyproject.toml`, `.python-version` |
 | `.gitignore` before `.env` | S2, U1 | Commit `.gitignore` first, then create `.env` | `.gitignore` lists `.venv`, `.env`, `*.db`, `*.sqlite3`, `*.db-journal`, `__pycache__/`, `CLAUDE.local.md` |
 | Fake `.env` never committed | U1 | `echo "ORBIT_API_KEY=fake-key-for-lab-only" > .env`, check `git status` | `git log --all -- .env` prints nothing |
 | `CLAUDE.md` | S3 | Under 30 lines; all-tests command (`pytest`); one-file command (`pytest tests/test_claims.py`); gold 4, silver 24, standard 72 hours; no architecture | `wc -l CLAUDE.md` is under 30 |
@@ -496,7 +496,7 @@ The README has these six headings, spelled exactly like this: `Linear Issues`,
 
 | Section | When to capture | What it must contain |
 |---------|-----------------|----------------------|
-| Install, Run, Test and lint (E1) | `feature/cli` | Clone, `python3.14 -m venv .venv`, `source .venv/bin/activate`, `pip install -r requirements-dev.txt`, `pytest`, `ruff check .` |
+| Install, Run, Test and lint (E1) | `feature/cli` | Clone, `python3.12 -m venv .venv`, `source .venv/bin/activate`, `pip install -r requirements-dev.txt`, `pytest`, `ruff check .` |
 | Command walkthrough (E2) | `feature/cli` | One real example per command (`file`, `list`, `assign`, `resolve`, `close`, `escalate`, `history`, `seed`, `report`) with real output |
 | Linear Issues (P3) | right after Phase C | Four working issue links, labelled with their branch names |
 | Setup Check (S6) | now (run done) | How the deny rule is written, the exact prompt, Claude Code's exact reply, and whether `.env` was blocked |
@@ -548,14 +548,14 @@ exactly four feature PRs. Each is checked separately before the PR merges.
 ### STRETCH GOAL 3: GitHub Actions (+1)
 
 - **Done:** `.github/workflows/ci.yml` starts with `# STRETCH GOAL 3`. It runs on
-  `pull_request` (and pushes to `main`), sets up Python 3.14, installs
+  `pull_request` (and pushes to `main`), sets up Python 3.12, installs
   `requirements-dev.txt`, and runs `ruff check .` and `pytest`.
 - **Record after:** each PR shows a green CI check. Link one run in the README.
 
 ### STRETCH GOAL 4: Dockerfile (+1)
 
 - **Do:** `Dockerfile` starting with `# STRETCH GOAL 4`. Base image
-  `python:3.14-slim`. It copies the project, installs `requirements-dev.txt`, uses
+  `python:3.12-slim`. It copies the project, installs `requirements-dev.txt`, uses
   `ENTRYPOINT ["python", "main.py"]`, and has a README note for running the tests with
   `docker run --rm --entrypoint pytest orbit-air`.
 - **Verify:** add a `docker` job to the CI workflow that builds the image, then runs

@@ -3,7 +3,7 @@
 # Build:      docker build -t orbit-air .
 # Run app:    docker run --rm orbit-air --now 2026-11-02T14:01:00 report
 # Run tests:  docker run --rm --entrypoint pytest orbit-air -q
-FROM python:3.14-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 

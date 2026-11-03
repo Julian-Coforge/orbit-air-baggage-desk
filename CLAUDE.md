@@ -1,7 +1,7 @@
 # Orbit Air Baggage Desk
 
 ## Commands
-- Set up: `python3.14 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt`
+- Set up: `python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt`
 - Run all tests: `pytest`
 - Run one test file: `pytest tests/test_claims.py`
 - Lint: `ruff check .`
