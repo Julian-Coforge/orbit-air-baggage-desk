@@ -420,7 +420,8 @@ replace the check on the real code below.
 
 **Mutation check (do once, on this branch, before committing the feature code).** Remove
 `with conn:` from the status-change helper and run `pytest tests/test_escalation.py -k
-rollback`. It must fail. Put the transaction back and run it again: it must pass. Do not
+rolls_back` (the test is `test_failed_history_write_rolls_back_the_claim_change`;
+`-k rollback` matches nothing). It must fail. Put the transaction back and run it again: it must pass. Do not
 commit the broken version. **Record after:** both real results in the Agent Log for this
 branch. This is the specific check for R3.
 
