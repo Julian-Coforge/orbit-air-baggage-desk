@@ -21,6 +21,17 @@ pytest
 ruff check .
 ```
 
+## Linear Issues
+
+Linear project: [Orbit Air Baggage Desk](https://linear.app/team2-week3-ert/project/orbit-air-baggage-desk-a3129c19e1dd)
+
+| Branch | Issue |
+|--------|-------|
+| `feature/schema-and-filing` | [TEA-32: feature/schema-and-filing: tables, claim filing, validation and list](https://linear.app/team2-week3-ert/issue/TEA-32/featureschema-and-filing-tables-claim-filing-validation-and-list) |
+| `feature/assign-and-status` | [TEA-33: feature/assign-and-status: assign, resolve, close and history](https://linear.app/team2-week3-ert/issue/TEA-33/featureassign-and-status-assign-resolve-close-and-history) |
+| `feature/deadlines-and-escalation` | [TEA-34: feature/deadlines-and-escalation: overdue rule, escalation and rollback](https://linear.app/team2-week3-ert/issue/TEA-34/featuredeadlines-and-escalation-overdue-rule-escalation-and-rollback) |
+| `feature/cli` | [TEA-35: feature/cli: all commands, --now option and seed](https://linear.app/team2-week3-ert/issue/TEA-35/featurecli-all-commands-now-option-and-seed) |
+
 ## Setup Check
 
 _To be filled in after testing the deny rule in a fresh Claude Code session._
