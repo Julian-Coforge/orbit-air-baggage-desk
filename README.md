@@ -21,6 +21,135 @@ pytest
 ruff check .
 ```
 
+## Run
+
+Every command takes two global options before the command name:
+
+- `--now ISO_TIMESTAMP` sets the current time (UTC if no offset is given). Without it the app reads the real clock. `main.py` is the only file that reads the clock.
+- `--db PATH` picks the SQLite file (default `orbit_air.db`, which is git-ignored).
+
+Commands that change a claim also take `--by NAME`, recorded in the history (default `desk`, or `system` for `escalate`).
+
+```bash
+python main.py --help
+python main.py [--now ISO_TIMESTAMP] [--db PATH] <command> ...
+```
+
+| Command | What it does |
+| --- | --- |
+| `file --passenger P --flight F --type lost\|delayed\|damaged --tier gold\|silver\|standard [--note N]` | Files a claim and sets its deadline (gold 4h, silver 24h, standard 72h) |
+| `list [--status S] [--tier T]` | Lists claims in id order (notes are not printed) |
+| `assign ID --agent NAME` | Assigns an open or escalated claim |
+| `resolve ID` | Resolves an assigned or escalated claim |
+| `close ID` | Closes a resolved claim |
+| `escalate` | Escalates every open or assigned claim whose deadline has passed |
+| `history ID` | Prints every status change for a claim, oldest first |
+| `seed CSV_PATH` | Loads claims from a CSV; rejects the whole file if any row is invalid |
+| `report` | Open and overdue counts per tier (STRETCH GOAL 2) |
+
+### Command walkthrough
+
+Real output from a fresh database (`walk.db`), run on 2026-11-03:
+
+```console
+$ python main.py --db walk.db --now 2026-11-02T09:00:00 seed seed_claims.csv
+Loaded 12 claims from seed_claims.csv (ids 1-12).
+
+$ python main.py --db walk.db --now 2026-11-02T09:30:00 file --passenger "Ada Lee" --flight OA101 --type lost --tier gold --note "Blue suitcase"
+Filed claim 13 (gold): deadline 2026-11-02T13:30:00 UTC
+
+$ python main.py --db walk.db list --tier gold
+ ID  STATUS     TIER      TYPE     FLIGHT  PASSENGER         AGENT     DEADLINE (UTC)
+  1  open       gold      lost     OA101   Amelia Hart       -         2026-11-02T13:00:00
+  5  open       gold      lost     OA404   Elena Rossi       -         2026-11-02T13:00:00
+  7  open       gold      delayed  OA606   George Lee        -         2026-11-02T13:00:00
+  9  open       gold      damaged  OA707   Ibrahim Haddad    -         2026-11-02T13:00:00
+ 13  open       gold      lost     OA101   Ada Lee           -         2026-11-02T13:30:00
+
+$ python main.py --db walk.db --now 2026-11-02T10:00:00 assign 13 --agent Dana
+Claim 13 assigned to Dana.
+
+$ python main.py --db walk.db --now 2026-11-02T11:00:00 resolve 13
+Claim 13 resolved.
+
+$ python main.py --db walk.db --now 2026-11-02T11:05:00 close 13
+Claim 13 closed.
+
+$ python main.py --db walk.db history 13
+2026-11-02T09:30:00  (filed) -> open  by desk
+2026-11-02T10:00:00  open -> assigned  by desk
+2026-11-02T11:00:00  assigned -> resolved  by desk
+2026-11-02T11:05:00  resolved -> closed  by desk
+
+$ python main.py --db walk.db --now 2026-11-02T14:00:00 escalate
+Escalated 4 claim(s): 1, 5, 7, 9
+
+$ python main.py --db walk.db --now 2026-11-02T14:00:00 report
+Claims at 2026-11-02T14:00:00 UTC
+TIER       OPEN  OVERDUE
+gold          4        4
+silver        4        0
+standard      4        0
+```
+
+Errors print `Error: ...` to stderr and exit with status 1:
+
+```console
+$ python main.py --db walk.db --now 2026-11-02T14:05:00 assign 13 --agent Priya
+Error: cannot change claim 13 from closed to assigned
+
+$ python main.py --db walk.db --now yesterday list
+Error: --now must be an ISO timestamp, e.g. 2026-11-02T14:00:00 (got 'yesterday')
+
+$ python main.py --db walk.db --now 2026-11-02T14:05:00 file --passenger "Zoe" --flight OA1 --type stolen --tier gold
+Error: unknown type 'stolen': must be one of delayed, lost, damaged
+```
+
+## Overdue Demonstration
+
+A gold claim filed at 08:00 has a 12:00 deadline. At exactly 12:00 it is not overdue; at 12:01 it is.
+Claim 3 shows an assigned claim keeps its agent when escalated. Real output from a fresh `demo.db`:
+
+```console
+$ python main.py --db demo.db --now 2026-11-02T08:00:00 file --passenger "Ada Lee" --flight OA101 --type lost --tier gold
+Filed claim 1 (gold): deadline 2026-11-02T12:00:00 UTC
+
+$ python main.py --db demo.db --now 2026-11-02T08:00:00 file --passenger "Ben Ortiz" --flight OA202 --type delayed --tier silver
+Filed claim 2 (silver): deadline 2026-11-03T08:00:00 UTC
+
+$ python main.py --db demo.db --now 2026-11-02T08:30:00 file --passenger "Cy Park" --flight OA303 --type damaged --tier gold
+Filed claim 3 (gold): deadline 2026-11-02T12:30:00 UTC
+
+$ python main.py --db demo.db --now 2026-11-02T09:00:00 assign 3 --agent Dana
+Claim 3 assigned to Dana.
+
+$ python main.py --db demo.db --now 2026-11-02T12:00:00 escalate
+No claims are overdue at 2026-11-02T12:00:00 UTC.
+
+$ python main.py --db demo.db --now 2026-11-02T12:01:00 escalate
+Escalated 1 claim(s): 1
+
+$ python main.py --db demo.db --now 2026-11-02T12:31:00 escalate
+Escalated 1 claim(s): 3
+
+$ python main.py --db demo.db list --status escalated
+ ID  STATUS     TIER      TYPE     FLIGHT  PASSENGER         AGENT     DEADLINE (UTC)
+  1  escalated  gold      lost     OA101   Ada Lee           -         2026-11-02T12:00:00
+  3  escalated  gold      damaged  OA303   Cy Park           Dana      2026-11-02T12:30:00
+
+$ python main.py --db demo.db --now 2026-11-02T12:31:00 report
+Claims at 2026-11-02T12:31:00 UTC
+TIER       OPEN  OVERDUE
+gold          2        2
+silver        1        0
+standard      0        0
+
+$ python main.py --db demo.db history 3
+2026-11-02T08:30:00  (filed) -> open  by desk
+2026-11-02T09:00:00  open -> assigned  by desk
+2026-11-02T12:31:00  assigned -> escalated  by system
+```
+
 ## Linear Issues
 
 Linear project: [Orbit Air Baggage Desk](https://linear.app/team2-week3-ert/project/orbit-air-baggage-desk-a3129c19e1dd)
