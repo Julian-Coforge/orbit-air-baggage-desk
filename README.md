@@ -87,3 +87,53 @@ asked for these eight checks to be run against the branch code, without editing 
 checks 4 (filing rollback) and 5 (timezone offsets) were run as one-off scripts, not
 committed tests. The committed rollback test on `feature/deadlines-and-escalation`
 covers the same transaction pattern for status changes.
+
+### feature/assign-and-status ([TEA-33](https://linear.app/team2-week3-ert/issue/TEA-33/featureassign-and-status-assign-resolve-close-and-history), PR #2)
+
+**Prompt given.** The workflow from PLAN.md section 7, with the TEA-33 issue (problem,
+actual, expected, done when, constraint) and PLAN.md section 8's 12 planned tests as the
+spec.
+
+**What the agent did.**
+- Wrote the 12 tests in `tests/test_status.py`, ran them, and committed them alone
+  (`90cf4e1`). They failed at collection:
+  `ImportError: cannot import name 'assign_claim' from 'claims'`.
+- Added `ALLOWED_CHANGES`, a `_change_status` helper (look up the current status,
+  reject any move not in the table, then update the claim and insert history inside
+  one `with conn:`), `assign_claim`, `resolve_claim`, `close_claim` and `get_history`.
+  Committed as `4741905`, which changes only `claims.py`. Result: `23 passed`,
+  `ruff check .` clean, CI green.
+
+**What I checked.** I reviewed the PR against PLAN.md, the status table in the brief
+and the rubric. I noticed two places where the committed tests are thinner than the
+behaviour they describe: only the open-to-closed rejection asserts the history count,
+and the escalated reassignment test starts with no agent, so it never proves an
+existing agent gets replaced. I had these checks run as a script against the branch
+code, without changing it:
+
+1. `ALLOWED_CHANGES` equals the brief's table exactly: 5 statuses, 7 allowed moves,
+   `closed` maps to an empty set. Nothing missing, nothing extra.
+2. `open` to `closed`, `open` to `resolved` and `closed` to `assigned` each raised
+   `ClaimError` (`cannot change claim 1 from open to closed`, and so on). Status, agent
+   and history count were identical before and after in all three cases, for example
+   `('open', None, 1) -> ('open', None, 1)`.
+3. A claim assigned to `Dana`, put into `escalated`, then reassigned to `Priya` ended
+   as `('assigned', 'Priya')`. The last history row was `escalated` to `assigned`, by
+   `Supervisor Kim`, at `2026-11-02T11:00:00`.
+4. One assignment added exactly one history row (count 1 to 2) with the right
+   `claim_id`, `open` to `assigned`, `Sam`, `2026-11-02T10:10:00`. The full life (file,
+   assign, resolve, close) produced 4 rows in order, at 10:00, 10:10, 10:20 and 10:30.
+5. In `_change_status` the claim `UPDATE` and the history insert are both inside the
+   same `with conn:`, update first. With a temporary trigger forcing the history insert
+   to fail, `assign_claim` raised `forced history failure` and the claim stayed
+   `('open', None)` with 1 history row. The committed rollback test comes on the next
+   branch.
+6. `90cf4e1` (only `tests/test_status.py`, 12 tests collected) comes before `4741905`
+   (only `claims.py`). `git diff 90cf4e1 -- tests/`,
+   `git status --porcelain --untracked-files=all -- tests/` and
+   `git log --oneline 90cf4e1..HEAD -- tests/` are all empty.
+7. Locally on Python 3.14.6: `pytest -q` gave `23 passed`, `ruff check .` gave
+   `All checks passed!`. GitHub Actions passed on `4741905`.
+
+**What I changed.** Nothing: no defect was found. The two thin spots in the tests are
+covered by checks 2 and 3 above rather than by editing committed tests.

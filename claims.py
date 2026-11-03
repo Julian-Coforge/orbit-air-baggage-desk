@@ -12,6 +12,16 @@ CLAIM_TYPES = ("delayed", "lost", "damaged")
 TIERS = ("standard", "silver", "gold")
 STATUSES = ("open", "assigned", "escalated", "resolved", "closed")
 
+# Every status a claim may move to from its current status. Anything not
+# listed here is rejected.
+ALLOWED_CHANGES = {
+    "open": {"assigned", "escalated"},
+    "assigned": {"resolved", "escalated"},
+    "escalated": {"assigned", "resolved"},
+    "resolved": {"closed"},
+    "closed": set(),
+}
+
 # Hours a claim has to get a response, by tier.
 TIER_HOURS = {"gold": 4, "silver": 24, "standard": 72}
 
@@ -118,6 +128,74 @@ def get_claim(conn: sqlite3.Connection, claim_id: int) -> sqlite3.Row:
     if row is None:
         raise ClaimError(f"claim {claim_id} does not exist")
     return row
+
+
+def get_history(conn: sqlite3.Connection, claim_id: int) -> list[sqlite3.Row]:
+    """Return every history entry for one claim, oldest first."""
+    get_claim(conn, claim_id)
+    return conn.execute(
+        "SELECT * FROM history WHERE claim_id = ? ORDER BY id", (claim_id,)
+    ).fetchall()
+
+
+def _change_status(
+    conn: sqlite3.Connection,
+    claim_id: int,
+    new_status: str,
+    *,
+    now: datetime,
+    changed_by: str,
+    agent: str | None = None,
+) -> None:
+    """Move a claim to `new_status` and record it in history, as one transaction.
+
+    Raises ClaimError, and changes nothing, if the move is not in ALLOWED_CHANGES.
+    The claim is updated first and the history row written second, so if the
+    history write fails the transaction rolls the claim update back.
+    """
+    changed_by = _require_text(changed_by, "changed by")
+    old_status = get_claim(conn, claim_id)["status"]
+    if new_status not in ALLOWED_CHANGES[old_status]:
+        raise ClaimError(
+            f"cannot change claim {claim_id} from {old_status} to {new_status}"
+        )
+
+    with conn:
+        if agent is None:
+            conn.execute("UPDATE claims SET status = ? WHERE id = ?", (new_status, claim_id))
+        else:
+            conn.execute(
+                "UPDATE claims SET status = ?, agent = ? WHERE id = ?",
+                (new_status, agent, claim_id),
+            )
+        _add_history(conn, claim_id, old_status, new_status, changed_by, now)
+
+
+def assign_claim(
+    conn: sqlite3.Connection,
+    claim_id: int,
+    agent: str,
+    *,
+    now: datetime,
+    changed_by: str = "desk",
+) -> None:
+    """Assign an open or escalated claim to `agent`."""
+    agent = _require_text(agent, "agent")
+    _change_status(conn, claim_id, "assigned", now=now, changed_by=changed_by, agent=agent)
+
+
+def resolve_claim(
+    conn: sqlite3.Connection, claim_id: int, *, now: datetime, changed_by: str = "desk"
+) -> None:
+    """Resolve an assigned or escalated claim."""
+    _change_status(conn, claim_id, "resolved", now=now, changed_by=changed_by)
+
+
+def close_claim(
+    conn: sqlite3.Connection, claim_id: int, *, now: datetime, changed_by: str = "desk"
+) -> None:
+    """Close a resolved claim."""
+    _change_status(conn, claim_id, "closed", now=now, changed_by=changed_by)
 
 
 def list_claims(
