@@ -54,6 +54,13 @@ def deadline_for(tier: str, filed_at: datetime) -> datetime:
     return to_utc(filed_at) + timedelta(hours=TIER_HOURS[tier])
 
 
+def is_overdue(deadline: str | datetime, now: datetime) -> bool:
+    """True only when `now` is strictly later than `deadline`. At the deadline it is on time."""
+    if isinstance(deadline, str):
+        deadline = parse_time(deadline)
+    return to_utc(now) > to_utc(deadline)
+
+
 def _require_text(value: str | None, field: str) -> str:
     if value is None or not value.strip():
         raise ClaimError(f"{field} cannot be blank")
@@ -196,6 +203,41 @@ def close_claim(
 ) -> None:
     """Close a resolved claim."""
     _change_status(conn, claim_id, "closed", now=now, changed_by=changed_by)
+
+
+def escalate_claim(
+    conn: sqlite3.Connection, claim_id: int, *, now: datetime, changed_by: str = "system"
+) -> None:
+    """Escalate one open or assigned claim that is overdue at `now`.
+
+    Raises ClaimError, and changes nothing, if the claim is not overdue or its
+    status cannot move to escalated.
+    """
+    claim = get_claim(conn, claim_id)
+    if not is_overdue(claim["deadline"], now):
+        raise ClaimError(
+            f"claim {claim_id} is not overdue: its deadline is {claim['deadline']} UTC"
+        )
+    _change_status(conn, claim_id, "escalated", now=now, changed_by=changed_by)
+
+
+def escalate_overdue(
+    conn: sqlite3.Connection, *, now: datetime, changed_by: str = "system"
+) -> list[int]:
+    """Escalate every open or assigned claim that is overdue at `now`.
+
+    Returns the ids it escalated, in id order. Resolved, closed, already
+    escalated and not-yet-overdue claims are left alone.
+    """
+    candidates = conn.execute(
+        "SELECT id, deadline FROM claims WHERE status IN ('open', 'assigned') ORDER BY id"
+    ).fetchall()
+    escalated = []
+    for claim in candidates:
+        if is_overdue(claim["deadline"], now):
+            escalate_claim(conn, claim["id"], now=now, changed_by=changed_by)
+            escalated.append(claim["id"])
+    return escalated
 
 
 def list_claims(
