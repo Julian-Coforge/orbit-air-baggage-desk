@@ -83,7 +83,7 @@ asked for these eight checks to be run against the branch code, without editing 
 8. The PR title starts with `feature/schema-and-filing`, links TEA-32, and shows the real
    failing and passing output.
 
-**What I changed.** Nothing in the code or tests: no defect was found. Checks 4 and 5
-were run as one-off scripts, not committed tests. Filing atomicity is covered by a
-committed test on the escalation branch (the rollback test), and the UTC handling of
-`--now` by the CLI tests.
+**What I changed.** Nothing in the code or tests: no defect was found. Gap noted:
+checks 4 (filing rollback) and 5 (timezone offsets) were run as one-off scripts, not
+committed tests. The committed rollback test on `feature/deadlines-and-escalation`
+covers the same transaction pattern for status changes.
